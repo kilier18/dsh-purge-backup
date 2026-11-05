@@ -1,0 +1,705 @@
+// dsh-preset-kit setup 1.1.90 - single-file offline installer for DeepSeek Harness
+// build: csc /target:exe /codepage:65001 /resource:dist\dsh-preset-kit-1.1.90.tgz,presetkitctl.payload.tgz
+// C# 5 only (Framework csc 14.8) - no string interpolation, no null-conditional.
+
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.IO.Compression;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Web.Script.Serialization;
+using Microsoft.Win32;
+
+static class Program
+{
+    const string PayloadRes = "presetkitctl.payload.tgz";
+    const string PkgVersion = "1.1.90";
+    const string Spec = "file:./.dsh-preset-kit/dist/dsh-preset-kit-1.1.90.tgz";
+
+    static bool dry, noAsar, assumeYes, doKill;
+    static string rootArg, profileArg = "desktop";
+
+    static int Main(string[] args)
+    {
+        try
+        {
+            ParseArgs(args);
+            Banner();
+
+            string root = LocateRoot();
+            if (root == null) { Out("[x] 没找到 DeepSeek Harness 安装目录。用 --root \"D:\\path\\DeepSeek Harness\" 指定。"); return 2; }
+            Out("[+] DSH 安装目录: " + root);
+
+            string home = DshHome();
+            Out("[+] DSH_HOME   : " + home);
+
+            List<string> profiles = LocateProfiles(home);
+            if (profiles.Count == 0) { Out("[x] 在 " + Path.Combine(home, "profiles") + " 下没找到可用的 profile。"); return 3; }
+            Out("[+] 目标 profile: " + Join(profiles));
+
+            byte[] payload;
+            using (Stream s = typeof(Program).Assembly.GetManifestResourceStream(PayloadRes))
+            {
+                if (s == null) { Out("[x] 内嵌载荷缺失（编译时没带 /resource）。"); return 4; }
+                payload = ReadAll(s);
+            }
+            Out("[+] 内嵌载荷: " + payload.Length + " B  (dsh-preset-kit " + PkgVersion + ")");
+
+            if (dry) Out("[i] --dry-run：只检查，不写任何文件。");
+
+            int failed = 0;
+            foreach (string p in profiles)
+            {
+                if (!InstallProfile(p, payload)) failed++;
+            }
+
+            bool asarOk = HandleAsar(root);
+            Summary(root, home, profiles, failed, asarOk);
+            return failed == 0 ? 0 : 1;
+        }
+        catch (Exception ex)
+        {
+            Out("[x] 异常: " + ex.GetType().Name + ": " + ex.Message);
+            Out(ex.StackTrace);
+            return 9;
+        }
+    }
+
+    // ---------- args ----------
+
+    static void ParseArgs(string[] a)
+    {
+        for (int i = 0; i < a.Length; i++)
+        {
+            string s = a[i];
+            switch (s)
+            {
+                case "--dry-run": dry = true; break;
+                case "--no-asar": noAsar = true; break;
+                case "--yes": assumeYes = true; break;
+                case "--kill": doKill = true; break;
+                case "--root":
+                    if (i + 1 < a.Length) rootArg = a[++i];
+                    break;
+                case "--profile":
+                    if (i + 1 < a.Length) profileArg = a[++i];
+                    break;
+                case "-h":
+                case "--help":
+                    Banner();
+                    Out("用法: dsh-preset-kit-setup-1.1.90.exe [选项]");
+                    Out("  --dry-run            只探测，不写入");
+                    Out("  --root <dir>         指定 DSH 安装目录");
+                    Out("  --profile <name|all> 目标档案，默认 desktop（all = desktop/web/work）");
+                    Out("  --no-asar            不改 app.asar 名字");
+                    Out("  --kill               检测到 DSH 在跑就结束它（默认只提示）");
+                    Out("  --yes                少问一句（保留给未来确认项）");
+                    Environment.Exit(0);
+                    break;
+            }
+        }
+    }
+
+    // ---------- locate ----------
+
+    static string LocateRoot()
+    {
+        List<string> cands = new List<string>();
+        if (!string.IsNullOrEmpty(rootArg))
+        {
+            if (LooksLikeRoot(rootArg.TrimEnd('\\'))) return Path.GetFullPath(rootArg).TrimEnd('\\');
+            Out("[!] --root 指定的目录不像 DSH 安装目录（缺 DeepSeek Harness.exe 或 resources\\）：" + rootArg);
+            Out("    改用自动探测；要强制指定请确认路径。");
+        }
+        string la = Environment.GetEnvironmentVariable("LOCALAPPDATA");
+        if (!string.IsNullOrEmpty(la)) cands.Add(Path.Combine(Path.Combine(la, "Programs"), "DeepSeek Harness"));
+        foreach (string r in RegistryRoots()) if (!string.IsNullOrEmpty(r)) cands.Add(r);
+        string pf = Environment.GetEnvironmentVariable("ProgramFiles");
+        if (!string.IsNullOrEmpty(pf)) cands.Add(Path.Combine(pf, "DeepSeek Harness"));
+        string pf86 = Environment.GetEnvironmentVariable("ProgramFiles(x86)");
+        if (!string.IsNullOrEmpty(pf86)) cands.Add(Path.Combine(pf86, "DeepSeek Harness"));
+
+        List<string> seen = new List<string>();
+        foreach (string c in cands)
+        {
+            string n;
+            try { n = Path.GetFullPath(c).TrimEnd('\\'); } catch { continue; }
+            if (seen.Contains(n.ToLowerInvariant())) continue;
+            seen.Add(n.ToLowerInvariant());
+            if (LooksLikeRoot(n)) return n;
+        }
+        return null;
+    }
+
+    static bool LooksLikeRoot(string dir)
+    {
+        if (!Directory.Exists(dir)) return false;
+        if (!File.Exists(Path.Combine(dir, "DeepSeek Harness.exe"))) return false;
+        return Directory.Exists(Path.Combine(dir, "resources"));
+    }
+
+    static List<string> RegistryRoots()
+    {
+        List<string> res = new List<string>();
+        string[] keys =
+        {
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+            @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+        };
+        RegistryHive[] hives = { RegistryHive.CurrentUser, RegistryHive.LocalMachine };
+        foreach (RegistryHive h in hives)
+        {
+            foreach (string k in keys)
+            {
+                try
+                {
+                    using (RegistryKey baseKey = RegistryKey.OpenBaseKey(h, RegistryView.Default))
+                    using (RegistryKey rk = baseKey.OpenSubKey(k))
+                    {
+                        if (rk == null) continue;
+                        foreach (string sub in rk.GetSubKeyNames())
+                        {
+                            using (RegistryKey sk = rk.OpenSubKey(sub))
+                            {
+                                if (sk == null) continue;
+                                string dn = sk.GetValue("DisplayName") as string;
+                                if (dn == null) continue;
+                                if (dn.IndexOf("DeepSeek Harness", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                                string loc = sk.GetValue("InstallLocation") as string;
+                                if (!string.IsNullOrEmpty(loc)) res.Add(loc.Trim('"'));
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
+        }
+        return res;
+    }
+
+    static string DshHome()
+    {
+        string env = Environment.GetEnvironmentVariable("DSH_HOME");
+        if (!string.IsNullOrEmpty(env) && Directory.Exists(env)) return Path.GetFullPath(env);
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh");
+    }
+
+    static List<string> LocateProfiles(string home)
+    {
+        List<string> list = new List<string>();
+        string dir = Path.Combine(home, "profiles");
+        if (!Directory.Exists(dir)) return list;
+        if (profileArg != null && profileArg.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (string d in Directory.GetDirectories(dir))
+                if (File.Exists(Path.Combine(d, "package.json"))) list.Add(d);
+        }
+        else
+        {
+            foreach (string name in profileArg.Split(','))
+            {
+                string d = Path.Combine(dir, name.Trim());
+                if (File.Exists(Path.Combine(d, "package.json"))) list.Add(d);
+                else Out("[!] profile 不存在或不是 DSH 档案: " + d);
+            }
+        }
+        return list;
+    }
+
+    // ---------- install one profile ----------
+
+    static bool InstallProfile(string profileDir, byte[] payload)
+    {
+        Out("");
+        Out("=== " + Path.GetFileName(profileDir) + "  " + profileDir);
+
+        string nm = Path.Combine(profileDir, "node_modules");
+        string pkgDir = Path.Combine(nm, "dsh-preset-kit");
+        bool shared = IsReparse(nm);
+        if (shared) Out("[i] node_modules 是链接（与其他档案共用），解包落到链接目标上");
+
+        if (dry)
+        {
+            Out("[i] would extract -> " + pkgDir);
+            Out("[i] would wire package.json / cordis.patch.yml");
+            return true;
+        }
+
+        // 1. payload copy for self-healing pnpm installs
+        string keepDir = Path.Combine(Path.Combine(profileDir, ".dsh-preset-kit"), "dist");
+        try
+        {
+            Directory.CreateDirectory(keepDir);
+            string keep = Path.Combine(keepDir, "dsh-preset-kit-1.1.90.tgz");
+            bool need = true;
+            if (File.Exists(keep))
+            {
+                FileInfo fi = new FileInfo(keep);
+                if (fi.Length == payload.Length) need = false;
+            }
+            if (need) { WriteBytes(keep, payload); Out("[+] 离线包落地: " + keep); }
+            else Out("[=] 离线包已存在: " + keep);
+        }
+        catch (Exception ex) { Out("[!] 离线包落地失败: " + ex.Message); }
+
+        // 2. extract package/ -> node_modules/dsh-preset-kit
+        int files = 0;
+        try
+        {
+            Directory.CreateDirectory(pkgDir);
+            files = ExtractTarGz(payload, pkgDir);
+            Out("[+] 解包 " + files + " 个文件 -> " + pkgDir);
+        }
+        catch (Exception ex)
+        {
+            Out("[x] 解包失败: " + ex.Message);
+            return false;
+        }
+
+        string installed = ReadPkgVersion(pkgDir);
+        if (installed == null) { Out("[x] 解包后没读到 package.json，安装不完整"); return false; }
+        Out("[+] node_modules/dsh-preset-kit 版本: " + installed);
+        if (installed != PkgVersion) Out("[!] 版本与载荷不一致（期望 " + PkgVersion + "）");
+
+        // 3. wire package.json
+        bool okJson = WirePackageJson(profileDir);
+        // 4. wire cordis.patch.yml
+        bool okYml = WireCordisPatch(profileDir);
+        return okJson && okYml;
+    }
+
+    static bool IsReparse(string path)
+    {
+        try
+        {
+            if (!Directory.Exists(path)) return false;
+            return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
+        }
+        catch { return false; }
+    }
+
+    static string ReadPkgVersion(string pkgDir)
+    {
+        string f = Path.Combine(pkgDir, "package.json");
+        if (!File.Exists(f)) return null;
+        string t = File.ReadAllText(f, Encoding.UTF8);
+        Match m = Regex.Match(t, "\"version\"\\s*:\\s*\"([^\"]+)\"");
+        return m.Success ? m.Groups[1].Value : null;
+    }
+
+    // ---------- package.json ----------
+
+    static bool WirePackageJson(string profileDir)
+    {
+        string f = Path.Combine(profileDir, "package.json");
+        string bak = f + ".inst-bak";
+        string orig = File.ReadAllText(f, Encoding.UTF8);
+        string text = orig;
+
+        bool hasDep = Regex.IsMatch(text, "\"dsh-preset-kit\"\\s*:\\s*\"[^\"]*\"");
+        if (hasDep)
+        {
+            text = Regex.Replace(text, "\"dsh-preset-kit\"\\s*:\\s*\"[^\"]*\"", "\"dsh-preset-kit\": \"" + Spec + "\"", RegexOptions.None);
+            Out("[=] dependencies.dsh-preset-kit 已有，spec 统一为 " + Spec);
+        }
+        else
+        {
+            Match m = Regex.Match(text, "\"dependencies\"\\s*:\\s*\\{");
+            if (!m.Success) { Out("[x] package.json 里没有 dependencies 节点"); return false; }
+            int at = m.Index + m.Length;
+            string indent = GuessIndent(text, at);
+            text = text.Insert(at, "\r\n" + indent + "\"dsh-preset-kit\": \"" + Spec + "\",");
+            Out("[+] dependencies 插入 dsh-preset-kit");
+        }
+
+        // bundles array inside dsh.profile
+        Match b = Regex.Match(text, "\"bundles\"\\s*:\\s*\\[");
+        if (!b.Success)
+        {
+            Out("[x] package.json 里没有 bundles 数组");
+            return false;
+        }
+        int open = b.Index + b.Length;
+        int close = text.IndexOf(']', open);
+        if (close < 0) { Out("[x] bundles 数组没闭合"); return false; }
+        string inner = text.Substring(open, close - open);
+        if (inner.IndexOf("\"dsh-preset-kit\"", StringComparison.Ordinal) >= 0)
+        {
+            Out("[=] bundles 已含 dsh-preset-kit");
+        }
+        else
+        {
+            string body = inner.Trim();
+            if (body.Length == 0)
+            {
+                text = text.Remove(open, close - open).Insert(open, "\r\n        \"dsh-preset-kit\"\r\n      ");
+            }
+            else
+            {
+                string itemIndent = GuessArrayIndent(text, open);
+                int lastNonWs = open + inner.Length - 1;
+                while (lastNonWs > open && char.IsWhiteSpace(text[lastNonWs])) lastNonWs--;
+                string ins = (text[lastNonWs] == ',') ? "" : ",";
+                text = text.Insert(lastNonWs + 1, ins + "\r\n" + itemIndent + "\"dsh-preset-kit\"");
+            }
+            Out("[+] bundles 追加 dsh-preset-kit");
+        }
+
+        // 防尾逗号（空对象/空数组插入后会留下 ",\r\n  }"）
+        text = Regex.Replace(text, ",[ \t]*(\r?\n[ \t]*)?([}\\]])", "$1$2");
+
+        // validate
+        try
+        {
+            new JavaScriptSerializer().DeserializeObject(text);
+        }
+        catch (Exception ex)
+        {
+            Out("[x] 改完 JSON 校验失败，已放弃写入: " + ex.Message);
+            return false;
+        }
+
+        if (text == orig) { Out("[=] package.json 无需改动"); return true; }
+        try
+        {
+            if (!File.Exists(bak)) File.Copy(f, bak);
+            File.WriteAllText(f, text, new UTF8Encoding(false));
+            Out("[+] package.json 已更新（备份 " + Path.GetFileName(bak) + "）");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Out("[x] 写 package.json 失败: " + ex.Message);
+            return false;
+        }
+    }
+
+    static string GuessIndent(string text, int from)
+    {
+        Match m = Regex.Match(text.Substring(from), "\r?\n([ \t]+)\"");
+        return m.Success ? m.Groups[1].Value : "    ";
+    }
+
+    static string GuessArrayIndent(string text, int from)
+    {
+        Match m = Regex.Match(text.Substring(from), "\r?\n([ \t]+)\"");
+        return m.Success ? m.Groups[1].Value : "        ";
+    }
+
+    // ---------- cordis.patch.yml ----------
+
+    static bool WireCordisPatch(string profileDir)
+    {
+        string f = Path.Combine(profileDir, "cordis.patch.yml");
+        if (!File.Exists(f))
+        {
+            Out("[!] 没有 cordis.patch.yml（档案可能不是 DSH 运行时档案），跳过");
+            return true;
+        }
+        string text = File.ReadAllText(f, Encoding.UTF8);
+        if (Regex.IsMatch(text, "(?m)^\\s*-\\s*id:\\s*dsh-preset-kit\\s*$"))
+        {
+            Out("[=] cordis.patch.yml 已含 dsh-preset-kit");
+            return true;
+        }
+
+        string indent = "  ";
+        Match idm = Regex.Match(text, "(?m)^([ ]+)-[ ]+id:");
+        if (idm.Success) indent = idm.Groups[1].Value;
+        string block = indent + "- id: dsh-preset-kit\r\n" + indent + "  enabled: true\r\n";
+
+        Match ins = Regex.Match(text, "(?m)^insert:[ \\t]*\\r?$");
+        if (ins.Success)
+        {
+            int at = ins.Index + ins.Length;
+            if (at < text.Length && text[at] == '\r') at++;
+            if (at < text.Length && text[at] == '\n') at++;
+            text = text.Insert(at, block);
+            Out("[+] cordis.patch.yml: 在 insert 块追加 dsh-preset-kit");
+        }
+        else
+        {
+            if (!text.EndsWith("\n")) text += "\r\n";
+            text += "\r\ninsert:\r\n" + block;
+            Out("[+] cordis.patch.yml: 新建 insert 块");
+        }
+
+        try
+        {
+            string bak = f + ".inst-bak";
+            if (!File.Exists(bak)) File.Copy(f, bak);
+            File.WriteAllText(f, text, new UTF8Encoding(false));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Out("[x] 写 cordis.patch.yml 失败: " + ex.Message);
+            return false;
+        }
+    }
+
+    // ---------- asar ----------
+
+    static bool HandleAsar(string root)
+    {
+        Out("");
+        string asar = Path.Combine(Path.Combine(root, "resources"), "app.asar");
+        string appDir = Path.Combine(Path.Combine(root, "resources"), "app");
+        if (!File.Exists(asar))
+        {
+            Out("[=] app.asar 已不在（桌面端已跑在解包目录），无需处理");
+            return true;
+        }
+        if (!File.Exists(Path.Combine(appDir, "package.json")))
+        {
+            Out("[!] resources\\app 还没有解包内容 → 现在改名会让 DSH 起不来，跳过");
+            Out("    先启动 DSH → 侧栏 dsh-preset-kit → 校准 → 应用，再跑本 exe（或 swap-to-app-dir.cmd）");
+            return false;
+        }
+        if (noAsar) { Out("[i] --no-asar：跳过 asar 改名"); return true; }
+        if (dry) { Out("[i] would rename app.asar -> app.asar.dshpresetkit.bak"); return true; }
+
+        if (Process.GetProcessesByName("DeepSeek Harness").Length > 0)
+        {
+            if (doKill)
+            {
+                Out("[i] 结束正在运行的 DeepSeek Harness ...");
+                foreach (Process pr in Process.GetProcessesByName("DeepSeek Harness"))
+                {
+                    try { pr.Kill(); pr.WaitForExit(5000); } catch { }
+                }
+                System.Threading.Thread.Sleep(1500);
+            }
+            else
+            {
+                Out("[!] DeepSeek Harness 正在运行，asar 被锁。退出桌面端（含托盘）后重跑，或加 --kill");
+                return false;
+            }
+        }
+
+        string target = asar + ".dshpresetkit.bak";
+        if (File.Exists(target)) { Out("[!] 目标已存在: " + Path.GetFileName(target) + "，请手工确认后再跑"); return false; }
+        for (int i = 1; i <= 12; i++)
+        {
+            try
+            {
+                File.Move(asar, target);
+                Out("[+] app.asar -> app.asar.dshpresetkit.bak（" + new FileInfo(target).Length + " B）");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                if (i == 12) { Out("[x] 改名失败（12 次重试）: " + ex.Message); return false; }
+                System.Threading.Thread.Sleep(500);
+            }
+        }
+        return false;
+    }
+
+    // ---------- tar.gz ----------
+
+    static int ExtractTarGz(byte[] tgz, string destRoot)
+    {
+        int count = 0;
+        string longName = null;
+        using (MemoryStream ms = new MemoryStream(tgz))
+        using (GZipStream gz = new GZipStream(ms, CompressionMode.Decompress))
+        {
+            byte[] hdr = new byte[512];
+            while (true)
+            {
+                if (!ReadExact(gz, hdr, 512)) break;
+                bool zero = true;
+                for (int i = 0; i < 512; i++) if (hdr[i] != 0) { zero = false; break; }
+                if (zero) break;
+
+                string name = CStr(hdr, 0, 100);
+                string prefix = CStr(hdr, 345, 155);
+                long size = Octal(hdr, 124, 12);
+                char type = (char)hdr[156];
+
+                if (longName != null) { name = longName; longName = null; }
+                if (prefix.Length > 0) name = prefix + "/" + name;
+
+                if (type == 'L')
+                {
+                    byte[] lb = new byte[size];
+                    ReadExact(gz, lb, (int)size);
+                    SkipTo512(gz, size);
+                    longName = Encoding.UTF8.GetString(lb).TrimEnd('\0');
+                    continue;
+                }
+                if (type == 'x' || type == 'g' || type == 'K')
+                {
+                    Skip(gz, size);
+                    continue;
+                }
+
+                if (type == '0' || type == '\0')
+                {
+                    string rel = StripPackage(name);
+                    if (rel != null)
+                    {
+                        string full = Path.Combine(destRoot, rel.Replace('/', '\\'));
+                        string dir = Path.GetDirectoryName(full);
+                        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                        byte[] data = new byte[size];
+                        if (!ReadExact(gz, data, (int)size)) break;
+                        File.WriteAllBytes(full, data);
+                        count++;
+                    }
+                    SkipTo512(gz, size);
+                }
+                else if (type == '5')
+                {
+                    string rel = StripPackage(name);
+                    if (rel != null && rel.Length > 0)
+                        Directory.CreateDirectory(Path.Combine(destRoot, rel.Replace('/', '\\')));
+                }
+                else
+                {
+                    Skip(gz, size);
+                }
+            }
+        }
+        return count;
+    }
+
+    static string StripPackage(string name)
+    {
+        name = name.Replace('\\', '/').TrimStart('/');
+        if (name.StartsWith("./")) name = name.Substring(2);
+        if ((name == "package") ) return "";
+        if (!name.StartsWith("package/")) return null;
+        string rel = name.Substring("package/".Length);
+        if (rel.IndexOf("..", StringComparison.Ordinal) >= 0) return null;
+        return rel;
+    }
+
+    static string CStr(byte[] b, int off, int len)
+    {
+        int end = off;
+        while (end < off + len && b[end] != 0) end++;
+        return Encoding.UTF8.GetString(b, off, end - off);
+    }
+
+    static long Octal(byte[] b, int off, int len)
+    {
+        int i = off;
+        while (i < off + len && (b[i] == ' ' || b[i] == 0)) i++;
+        long v = 0;
+        while (i < off + len && b[i] >= '0' && b[i] <= '7') { v = v * 8 + (b[i] - '0'); i++; }
+        return v;
+    }
+
+    static void SkipTo512(Stream s, long size)
+    {
+        long pad = (512 - (size % 512)) % 512;
+        if (pad > 0) Skip(s, pad);
+    }
+
+    static void Skip(Stream s, long n)
+    {
+        byte[] buf = new byte[8192];
+        while (n > 0)
+        {
+            int want = (int)Math.Min(buf.Length, n);
+            int got = s.Read(buf, 0, want);
+            if (got <= 0) return;
+            n -= got;
+        }
+    }
+
+    static bool ReadExact(Stream s, byte[] buf, int n)
+    {
+        int off = 0;
+        while (off < n)
+        {
+            int got = s.Read(buf, off, n - off);
+            if (got <= 0) return false;
+            off += got;
+        }
+        return true;
+    }
+
+    static byte[] ReadAll(Stream s)
+    {
+        using (MemoryStream ms = new MemoryStream())
+        {
+            byte[] buf = new byte[65536];
+            int got;
+            while ((got = s.Read(buf, 0, buf.Length)) > 0) ms.Write(buf, 0, got);
+            return ms.ToArray();
+        }
+    }
+
+    static void WriteBytes(string path, byte[] data)
+    {
+        string dir = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+        File.WriteAllBytes(path, data);
+    }
+
+    // ---------- output ----------
+
+    static void Banner()
+    {
+        Out("dsh-preset-kit setup " + PkgVersion + "  (offline, single file)");
+        Out("--------------------------------------------------");
+    }
+
+    static void Summary(string root, string home, List<string> profiles, int failed, bool asarOk)
+    {
+        Out("");
+        Out("--------------------------------------------------");
+        Out(failed == 0 ? "[OK] 注入完成" : "[!!] 有 " + failed + " 个档案失败");
+        Out("DSH      : " + root);
+        Out("DSH_HOME : " + home);
+        Out("档案     : " + Join(profiles));
+        Out("asar     : " + (asarOk ? "已切换/无需切换" : "未切换（见上面提示）"));
+        Out("");
+        Out("下一步：");
+        Out("  1) 完全退出 DSH 桌面端（含托盘），再启动一次");
+        Out("  2) 侧栏 dsh-preset-kit → 校准 → 应用");
+        Out(asarOk
+            ? "  3) 应用后仍有补丁未校准 → 重启宿主再应用一次"
+            : "  3) 应用后仍报 app.asar 还在 → 重跑本 exe（或 install\\windows\\swap-to-app-dir.cmd）");
+        Out("  4) /presetkit status 复核：86 组、0 pending、0 drifted");
+    }
+
+    static string Join(List<string> items)
+    {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < items.Count; i++)
+        {
+            if (i > 0) sb.Append(", ");
+            sb.Append(Path.GetFileName(items[i]));
+        }
+        return sb.ToString();
+    }
+
+    static void Out(string s)
+    {
+        try
+        {
+            if (Console.IsOutputRedirected)
+            {
+                byte[] b = Encoding.UTF8.GetBytes(s + "\r\n");
+                Stream st = Console.OpenStandardOutput();
+                st.Write(b, 0, b.Length);
+                st.Flush();
+            }
+            else
+            {
+                try { Console.OutputEncoding = Encoding.GetEncoding(936); } catch { }
+                Console.WriteLine(s);
+            }
+        }
+        catch
+        {
+            Console.WriteLine(s);
+        }
+    }
+}
