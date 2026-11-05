@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Token = $env:GITHUB_TOKEN,
     [string]$Repo  = "kilier18/dsh-purge-backup",
     [string]$Tag   = "v1.1.90",
