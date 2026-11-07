@@ -3,6 +3,7 @@
 | 快照日期 | 版本 | 上游 commit | 上游 tag | 来源 | 校验 |
 |---|---|---|---|---|---|
 | 2026-11-04 | 1.1.90 | `217d60d3d61881079ea95bbe2c174f338a02182b` | `v1.1.90` | `~/.dsh/profiles/desktop/node_modules/dsh-preset-kit`（本机已应用并验收 68/70、0 drifted） | `pkg` 98 个文件 / 4.3 MB；`dist/dsh-preset-kit-1.1.90.tgz` 2.0 MB |
+| 2026-11-07 | 1.1.91（安装器） | 同 1.1.90 | - | 本仓库自建 | `dist/dsh-preset-kit-setup-1.1.91.exe` 2.07 MB，内嵌 1.1.90 载荷 + `tools/` 两份脚本 |
 
 ## 上游发布信息
 

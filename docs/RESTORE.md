@@ -3,7 +3,7 @@
 前提：DSH 已装好、能启动（目标是 **0.2.1-rc.5**，presetkit 1.1.90 的 `dshTargets` 里有 rc.2/rc.5）。
 本仓库只讲 dsh-preset-kit 这条链，其余插件的清单与安装顺序不在本文范围内。
 
-> **最快路径**：下载 release 里的 `dsh-preset-kit-setup-1.1.90.exe`，`--dry-run` 确认定位，再去掉 `--dry-run` 跑一遍 —— 第 1～3 节它全包了。下面各节是等价的手工/脚本流程，用于 exe 跑不动时排查。
+> **最快路径**：下载 release 里的 `dsh-preset-kit-setup-1.1.91.exe`，`--dry-run` 确认定位，再去掉 `--dry-run` 跑一遍 —— 第 1～3 节它全包了。下面各节是等价的手工/脚本流程，用于 exe 跑不动时排查。
 
 ---
 
@@ -122,7 +122,7 @@ install\windows\swap-to-app-dir.cmd
 ## 7. 出问题时的最短排查链
 
 1. `pnpm add` 报 `ERR_PNPM_IGNORED_BUILDS` → 漏了 `--ignore-scripts`；补上再手跑 ensure 脚本
-2. 面板显示"未适配" → 宿主版本不在 `dshTargets` 里（见 `docs/INSTALL-TROUBLESHOOTING.md` 门禁 4）
+2. 面板显示"未适配" → 宿主版本不在 `dshTargets` 里（见 `docs/INSTALL-TROUBLESHOOTING.md` 排查第 4 条）
 3. 装好但面板打不开 / 无此插件 → `package.json` 的 `dsh.profile.bundles` 少了 `dsh-preset-kit`，或 `cordis.patch.yml` 没 insert 块
 4. 应用成功但 checkout 仍是 `resources\app.asar\dsh` → 第 4 步没做，或被更新重建了 asar
 5. `swap` 脚本报 `ABORT: app.asar still locked` → 进程没退干净（含托盘/后台），先手动 `taskkill /F /IM "DeepSeek Harness.exe"`

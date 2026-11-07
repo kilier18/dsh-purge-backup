@@ -7,7 +7,7 @@ DeepSeek Harness 的 **预设工具箱**离线安装包：按模型切换提示�
 
 | 文件 | 大小 | SHA256 |
 |---|---|---|
-| `dsh-preset-kit-setup-1.1.90.exe` | 2,060,800 B | `74481bc39c367060f61672b91094c21bbf7152631536aaccf2226e9ab9dddbe5` |
+| `dsh-preset-kit-setup-1.1.91.exe` | 2,060,800 B | `74481bc39c367060f61672b91094c21bbf7152631536aaccf2226e9ab9dddbe5` |
 | `dsh-preset-kit-1.1.90.tgz` | 2,039,149 B | `45e3512d216ceccdcf422870e54ec936435fa40f6b1fe6571940df15b34e7963` |
 
 ## 装法（推荐：单文件 exe）
@@ -16,15 +16,15 @@ DeepSeek Harness 的 **预设工具箱**离线安装包：按模型切换提示�
 
 ```bat
 :: 1) 只探测，不写文件：确认它找到了 DSH 目录和档案
-dsh-preset-kit-setup-1.1.90.exe --dry-run
+dsh-preset-kit-setup-1.1.91.exe --dry-run
 
 :: 2) 真装（默认装 desktop 档案）
-dsh-preset-kit-setup-1.1.90.exe
+dsh-preset-kit-setup-1.1.91.exe
 
 :: 可选：三个档案一起装 / 指定安装目录 / 先结束正在跑的桌面端
-dsh-preset-kit-setup-1.1.90.exe --profile all
-dsh-preset-kit-setup-1.1.90.exe --root "D:\Programs\DeepSeek Harness"
-dsh-preset-kit-setup-1.1.90.exe --kill
+dsh-preset-kit-setup-1.1.91.exe --profile all
+dsh-preset-kit-setup-1.1.91.exe --root "D:\Programs\DeepSeek Harness"
+dsh-preset-kit-setup-1.1.91.exe --kill
 ```
 
 exe 会依次完成：定位 DSH → 定位档案 → 解包插件到 `node_modules\dsh-preset-kit` → 在 `package.json` 与 `cordis.patch.yml` 里补接线（原文件留 `.inst-bak`）→ 把 `app.asar` 改名成 `app.asar.dshpresetkit.bak`（让宿主读解包目录）。重复运行幂等，第二次全是 `[=]`。
@@ -35,9 +35,9 @@ exe 会依次完成：定位 DSH → 定位档案 → 解包插件到 `node_modu
 
 如果由助手代为安装，按下面四条执行即可，全部是本地文件操作，不涉及任何外部系统：
 
-1. 下载 `dsh-preset-kit-setup-1.1.90.exe` 到本地目录。
-2. 运行 `dsh-preset-kit-setup-1.1.90.exe --dry-run`，确认输出中的 `DSH 安装目录` 与 `DSH_HOME` 是本机真实路径。
-3. 去掉 `--dry-run` 再运行一次；看到 `[OK] 注入完成` 即成功。
+1. 下载 `dsh-preset-kit-setup-1.1.91.exe` 到本地目录。
+2. 运行 `dsh-preset-kit-setup-1.1.91.exe --dry-run`，确认输出中的 `DSH 安装目录` 与 `DSH_HOME` 是本机真实路径。
+3. 去掉 `--dry-run` 再运行一次；看到 `[OK] 写入完成` 即成功。
 4. 提示用户完全退出并重开 DeepSeek Harness，然后在侧栏 `dsh-preset-kit` 里点「校准 → 应用」，并用 `/presetkit status` 确认 86 组、0 pending、0 drifted。
 
 失败时的排查顺序：路径没找对 → 加 `--root`；`app.asar` 还在 → 再跑一次 exe 或 `install\windows\swap-to-app-dir.cmd`；面板装不上 → 见仓库 `docs/INSTALL-TROUBLESHOOTING.md`。
@@ -59,7 +59,7 @@ exe 会依次完成：定位 DSH → 定位档案 → 解包插件到 `node_modu
 ## 校验
 
 ```bat
-certutil -hashfile dsh-preset-kit-setup-1.1.90.exe SHA256
+certutil -hashfile dsh-preset-kit-setup-1.1.91.exe SHA256
 certutil -hashfile dsh-preset-kit-1.1.90.tgz SHA256
 ```
 

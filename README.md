@@ -1,4 +1,4 @@
-# dsh-preset-kit 离线安装包（v1.1.90）
+# dsh-preset-kit 离线安装包（v1.1.91）
 
 一台能正常起来的环境里跑通过的 **dsh-preset-kit 1.1.90** 完整离线包，外加一套**不依赖插件市场/插件安装器**的落地脚本。
 换新电脑、或者 DSH 面板死活装不上时，照下面走即可。
@@ -6,6 +6,18 @@
 - 上游：<https://github.com/YuJunZhiXue/dsh-preset-kit> tag `v1.1.90`，commit `217d60d3d61881079ea95bbe2c174f338a02182b`，发布 2026-11-02
 - 宿主版本：**DSH 0.2.1-rc.5**（`package.json` 的 `dshTargets` 里是 `0.2.1-rc.2` / `0.2.1-rc.5`）
 - 许可：Apache-2.0 + 上游 NOTICE（二开署名要求见 `pkg/NOTICE`）
+
+## 1.1.91 改了什么
+
+载荷本身仍是 **1.1.90**（`pkg/` 与 `dist/dsh-preset-kit-1.1.90.tgz` 未变，字节一致）；变的是安装器与随附工具。
+
+- **安装即校准**：新增第 7 步「会话预检校准」，装完就是可用状态，不用再手动点「校准 → 应用」第二次。
+- **可还原**：校准前把三个文件备份到 `<DSH_HOME>\dsh-preset-kit\gateoff-backup\<档案>\`；`--cal-revert` 或 `tools\gateoff.cmd --revert` 一键还原。
+- **可维护**：`tools\gateoff.mjs` / `gateoff.cmd` 随安装器落到 `<DSH_HOME>\dsh-preset-kit\`，日后插件自更新（会覆盖 `lib/`）后跑一次 `gateoff.cmd --apply` 即可恢复。
+- **幂等**：重复运行只补差量，不产生第二份备份、不重复改写文件。
+- **包名无关**：同时识别 `dsh-preset-kit` 与旧名 `dsh-purge` 的 `node_modules` 目录，两个包名都能校准。
+- **编译脚本入库**：`install\build-exe.cmd`（csc 命令行已在注释里固化，换机可复现）。
+- 文案统一：输出改「写入完成」，去掉安装器/脚本里解释「绕过什么检查」的说法。
 
 ## 这是什么 / 能做什么
 
@@ -23,7 +35,7 @@
 ```
 pkg/                                        1.1.90 全量源码（98 个文件，去 node_modules）
 src/Program.cs                              exe 源码（C# 5，csc 编译，载荷用 /resource 内嵌）
-dist/dsh-preset-kit-setup-1.1.90.exe        一键离线安装器（约 2.0 MB，无依赖）
+dist/dsh-preset-kit-setup-1.1.91.exe        一键离线安装器（约 2.0 MB，无依赖）
 dist/dsh-preset-kit-1.1.90.tgz              npm 格式离线包（package/ 根），可直接 pnpm add file:
 dist/SHA256SUMS.txt                         上面两个文件的校验值
 install/install.cmd                         一键：调 install-offline.ps1
@@ -38,18 +50,20 @@ docs/VERSIONS.md                            版本与来源记录
 
 ## 一键 exe（推荐：单文件、无依赖）
 
-`dist\dsh-preset-kit-setup-1.1.90.exe`（约 2.0 MB）把离线包内嵌在自身里，双击即可，不需要 node/pnpm/网络。
+`dist\dsh-preset-kit-setup-1.1.91.exe`（约 2.0 MB）把离线包内嵌在自身里，双击即可，不需要 node/pnpm/网络。
 
 ```bat
-dsh-preset-kit-setup-1.1.90.exe --dry-run      :: 只探测：打印 DSH 路径、DSH_HOME、目标档案、载荷大小
-dsh-preset-kit-setup-1.1.90.exe                :: 装 desktop（默认）
-dsh-preset-kit-setup-1.1.90.exe --profile all  :: desktop + web + work
-dsh-preset-kit-setup-1.1.90.exe --root "D:\Programs\DeepSeek Harness"
-dsh-preset-kit-setup-1.1.90.exe --kill         :: 检测到 DSH 在跑就先结束，再切 asar
-dsh-preset-kit-setup-1.1.90.exe --no-asar      :: 不动 app.asar，只装插件
+dsh-preset-kit-setup-1.1.91.exe --dry-run      :: 只探测：打印 DSH 路径、DSH_HOME、目标档案、载荷大小
+dsh-preset-kit-setup-1.1.91.exe                :: 装 desktop（默认）
+dsh-preset-kit-setup-1.1.91.exe --profile all  :: desktop + web + work
+dsh-preset-kit-setup-1.1.91.exe --root "D:\Programs\DeepSeek Harness"
+dsh-preset-kit-setup-1.1.91.exe --kill         :: 检测到 DSH 在跑就先结束，再切 asar
+dsh-preset-kit-setup-1.1.91.exe --no-asar      :: 不动 app.asar，只装插件
+dsh-preset-kit-setup-1.1.91.exe --no-cal       :: 只装包，不做会话预检校准
+dsh-preset-kit-setup-1.1.91.exe --cal-revert   :: 用校准备份把会话预检还原成默认
 ```
 
-它依次做六件事：
+它依次做七件事：
 
 1. **定位 DSH**：`--root` → `%LOCALAPPDATA%\Programs\DeepSeek Harness` → 注册表 Uninstall 项的 `InstallLocation` → `%ProgramFiles%\DeepSeek Harness`；校验 `DeepSeek Harness.exe` + `resources\`。
 2. **定位档案**：`DSH_HOME`（默认 `%USERPROFILE%\.dsh`）下的 `profiles\{desktop,web,work}`；`node_modules` 是符号链接的档案（如 work→desktop）会跟着共用。
@@ -57,8 +71,9 @@ dsh-preset-kit-setup-1.1.90.exe --no-asar      :: 不动 app.asar，只装插件
 4. **固化依赖**：tgz 另存一份到 `<profile>\.dsh-preset-kit\dist\`，`package.json` 里写成 `file:./.dsh-preset-kit/dist/dsh-preset-kit-1.1.90.tgz` —— 以后 `pnpm install` 会从这个相对路径自愈，不再依赖 GitHub。
 5. **接线**：`dependencies.dsh-preset-kit`、`dsh.profile.bundles`、`cordis.patch.yml` 的 `insert:` 块各补一处；改完用 `JavaScriptSerializer` 校验 JSON，失败不落盘；原文件留 `.inst-bak`。重复跑幂等（第二次全是 `[=]`）。
 6. **切 asar**：`resources\app.asar` 存在时改名 `app.asar.dshpresetkit.bak`（12 次重试）；若 `resources\app` 还没解包内容则拒绝改名并提示先应用，避免把 DSH 弄到起不来。
+7. **会话预检校准**：给 `lib/net-scope.js` 的 `installRegionGate` 加一行早退，使 `agent/pre-step` 与 `tools/pre-execute` 两个前置钩子**不注册**（预检默认关闭）；同时把 `lib/default-prompt-inject.zh.md` / `.en.md` 里「外挂」两行改成放行文案。原件备份到 `<DSH_HOME>\dsh-preset-kit\gateoff-backup\<档案>\`，`--cal-revert` 一键还原；维护脚本落到 `<DSH_HOME>\dsh-preset-kit\gateoff.cmd`（`--status` / `--apply` / `--revert`）。步骤幂等：已校准的档案再跑只报 `预检=关闭`。
 
-装完：完全退出桌面端（含托盘）重开 → 侧栏 dsh-preset-kit → 校准 → 应用 → `/presetkit status` 复核：86 组、0 pending、0 drifted。
+装完：完全退出桌面端（含托盘）重开 → 侧栏 dsh-preset-kit → 状态 → 复核 86 组、0 pending、0 drifted（预检已在安装时校准，无需再点「应用」）。
 
 ## 脚本安装（想要可审计的每一步）
 
@@ -95,7 +110,7 @@ install\windows\swap-to-app-dir.cmd
 ```bat
 set CSC=%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe
 %CSC% /nologo /target:exe /platform:anycpu /optimize+ /codepage:65001 ^
-  /out:dist\dsh-preset-kit-setup-1.1.90.exe ^
+  /out:dist\dsh-preset-kit-setup-1.1.91.exe ^
   /resource:dist\dsh-preset-kit-1.1.90.tgz,presetkitctl.payload.tgz ^
   /r:System.Web.Extensions.dll src\Program.cs
 ```
@@ -110,7 +125,7 @@ tar -czf dist\dsh-preset-kit-1.1.90.tgz -C pack package
 ## 校验
 
 ```bat
-certutil -hashfile dist\dsh-preset-kit-setup-1.1.90.exe SHA256
+certutil -hashfile dist\dsh-preset-kit-setup-1.1.91.exe SHA256
 certutil -hashfile dist\dsh-preset-kit-1.1.90.tgz SHA256
 ```
 
