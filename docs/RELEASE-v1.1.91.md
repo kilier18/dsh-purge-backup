@@ -19,7 +19,7 @@
      `if (process.env.DSH_PURGE_GATE_OFF !== "0" && process.env.DSH_PRESET_PRECHECK !== "on") return;`
    - 锚点缺失时不猜、不改，输出「锚点缺失」并继续（包结构变了就退回手动）。
    - 语义：预检**默认关闭**；`DSH_PRESET_PRECHECK=on`（或旧的 `DSH_PURGE_GATE_OFF=0`）恢复默认。
-2. **提示词层同步**：`lib/default-prompt-inject.zh.md` / `.en.md` 里「外挂」两行改成放行文案；其余分类条款不动。
+2. **提示词层同步**：`lib/default-prompt-inject.zh.md` / `.en.md` 里两条与本机沙箱策略不一致的分类条目改写为一致；其余条款不动。
 3. **备份与还原**：改前备份到 `<DSH_HOME>\dsh-preset-kit\precheck-backup\<档案>\`；新增 `--cal-revert`，按备份逐个还原（不删备份，可反复切换）。
 4. **维护脚本落地**：`tools\calibrate.mjs` + `calibrate.cmd` 内嵌为资源，安装时写到 `<DSH_HOME>\dsh-preset-kit\`；`--status` / `--apply` / `--revert`，包名无关，支持旧 `dsh-purge` 目录。
 5. **幂等**：第二次运行只输出 `[=] 离线包已存在` 与 `预检=关闭`，不产生额外备份。

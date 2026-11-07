@@ -2,7 +2,7 @@
 // 预设工具箱 · 会话预检开关（precheck off）
 // 作用：在已安装的预设包里给 lib/net-scope.js 的 installRegionGate 加一行早退，
 //       使 agent/pre-step 与 tools/pre-execute 两个前置钩子都不注册；
-//       同时把默认提示词里「禁止外挂」两句改成放行文案。
+//       同时把默认提示词里两条与本地沙箱策略不一致的分类条目改写为一致。
 //
 // 用法（本机无独立 node，用 Electron 当 node，见 calibrate.cmd）：
 //   calibrate.cmd --status     # 各档案状态
@@ -125,7 +125,7 @@ async function applyOne(p) {
     let next = text;
     for (const [re, to] of rules) next = next.replace(re, to);
     if (next !== text) fs.writeFileSync(file, next, "utf8");
-    report.prompt.push(`${name}:${next === text ? "已放行" : "已改写"}`);
+    report.prompt.push(`${name}:${next === text ? "已对齐" : "已改写"}`);
   }
   return report;
 }

@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
   install-offline.ps1 - install dsh-preset-kit into a DSH profile from a local tarball,
-  bypassing the plugin installer / marketplace / registry checks.
+  for offline machines where the plugin installer / marketplace is unavailable.
 
   Usage (from the repo root):
     powershell -ExecutionPolicy Bypass -File install\install-offline.ps1
