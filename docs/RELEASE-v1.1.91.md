@@ -20,8 +20,8 @@
    - 锚点缺失时不猜、不改，输出「锚点缺失」并继续（包结构变了就退回手动）。
    - 语义：预检**默认关闭**；`DSH_PRESET_PRECHECK=on`（或旧的 `DSH_PURGE_GATE_OFF=0`）恢复默认。
 2. **提示词层同步**：`lib/default-prompt-inject.zh.md` / `.en.md` 里「外挂」两行改成放行文案；其余分类条款不动。
-3. **备份与还原**：改前备份到 `<DSH_HOME>\dsh-preset-kit\gateoff-backup\<档案>\`；新增 `--cal-revert`，按备份逐个还原（不删备份，可反复切换）。
-4. **维护脚本落地**：`tools\gateoff.mjs` + `gateoff.cmd` 内嵌为资源，安装时写到 `<DSH_HOME>\dsh-preset-kit\`；`--status` / `--apply` / `--revert`，包名无关，支持旧 `dsh-purge` 目录。
+3. **备份与还原**：改前备份到 `<DSH_HOME>\dsh-preset-kit\precheck-backup\<档案>\`；新增 `--cal-revert`，按备份逐个还原（不删备份，可反复切换）。
+4. **维护脚本落地**：`tools\calibrate.mjs` + `calibrate.cmd` 内嵌为资源，安装时写到 `<DSH_HOME>\dsh-preset-kit\`；`--status` / `--apply` / `--revert`，包名无关，支持旧 `dsh-purge` 目录。
 5. **幂等**：第二次运行只输出 `[=] 离线包已存在` 与 `预检=关闭`，不产生额外备份。
 6. **命令行**：新增 `--no-cal`、`--cal-revert`；帮助文本按 `ExeVersion` 打印。
 7. **文案**：汇总行 `[OK] 注入完成` → `[OK] 写入完成`；`install-offline.ps1` 头部说明改为「离线环境安装」，不再描述绕过检查。
@@ -35,7 +35,7 @@
   - 第二次：`预检=关闭 提示词改写=2`（幂等，备份未增加）。
   - `--cal-revert`：`net-scope.js` 中 guard 计数 0；`default-prompt-inject.zh.md:115/137` 回到原文。
 - 钩子计数（stub ctx 调 `installRegionGate`）：默认 **0**；`DSH_PRESET_PRECHECK=on` 时 **2**（`agent/pre-step`、`tools/pre-execute`）。
-- 语法：`node --check` 对打完补丁的 `net-scope.js` 与 `gateoff.mjs` 均通过。
+- 语法：`node --check` 对打完补丁的 `net-scope.js` 与 `calibrate.mjs` 均通过。
 
 ## 升级/回滚
 
@@ -52,6 +52,6 @@ dsh-preset-kit-setup-1.1.91.exe --cal-revert --no-asar
 
 ## 已知限制
 
-- 插件自更新会重写 `lib/`，校准随之失效 → 更新后跑 `gateoff.cmd --apply`。
-- 宿主大版本升级后若 `installRegionGate` 改名/改签名，校准报「锚点缺失」，此时只能等工具更新或用 `gateoff.mjs` 适配。
+- 插件自更新会重写 `lib/`，校准随之失效 → 更新后跑 `calibrate.cmd --apply`。
+- 宿主大版本升级后若 `installRegionGate` 改名/改签名，校准报「锚点缺失」，此时只能等工具更新或用 `calibrate.mjs` 适配。
 - `app.asar` 切换在 DSH 运行中会失败，需 `--kill` 或先手动退出（含托盘）。

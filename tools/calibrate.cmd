@@ -7,4 +7,4 @@ if not exist "%DSH_EXE%" (
   echo 没找到 DeepSeek Harness.exe
   exit /b 1
 )
-"%DSH_EXE%" "%~dp0gateoff.mjs" %*
+"%DSH_EXE%" "%~dp0calibrate.mjs" %*

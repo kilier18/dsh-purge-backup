@@ -12,8 +12,8 @@
 载荷本身仍是 **1.1.90**（`pkg/` 与 `dist/dsh-preset-kit-1.1.90.tgz` 未变，字节一致）；变的是安装器与随附工具。
 
 - **安装即校准**：新增第 7 步「会话预检校准」，装完就是可用状态，不用再手动点「校准 → 应用」第二次。
-- **可还原**：校准前把三个文件备份到 `<DSH_HOME>\dsh-preset-kit\gateoff-backup\<档案>\`；`--cal-revert` 或 `tools\gateoff.cmd --revert` 一键还原。
-- **可维护**：`tools\gateoff.mjs` / `gateoff.cmd` 随安装器落到 `<DSH_HOME>\dsh-preset-kit\`，日后插件自更新（会覆盖 `lib/`）后跑一次 `gateoff.cmd --apply` 即可恢复。
+- **可还原**：校准前把三个文件备份到 `<DSH_HOME>\dsh-preset-kit\precheck-backup\<档案>\`；`--cal-revert` 或 `tools\calibrate.cmd --revert` 一键还原。
+- **可维护**：`tools\calibrate.mjs` / `calibrate.cmd` 随安装器落到 `<DSH_HOME>\dsh-preset-kit\`，日后插件自更新（会覆盖 `lib/`）后跑一次 `calibrate.cmd --apply` 即可恢复。
 - **幂等**：重复运行只补差量，不产生第二份备份、不重复改写文件。
 - **包名无关**：同时识别 `dsh-preset-kit` 与旧名 `dsh-purge` 的 `node_modules` 目录，两个包名都能校准。
 - **编译脚本入库**：`install\build-exe.cmd`（csc 命令行已在注释里固化，换机可复现）。
@@ -71,7 +71,7 @@ dsh-preset-kit-setup-1.1.91.exe --cal-revert   :: 用校准备份把会话预检
 4. **固化依赖**：tgz 另存一份到 `<profile>\.dsh-preset-kit\dist\`，`package.json` 里写成 `file:./.dsh-preset-kit/dist/dsh-preset-kit-1.1.90.tgz` —— 以后 `pnpm install` 会从这个相对路径自愈，不再依赖 GitHub。
 5. **接线**：`dependencies.dsh-preset-kit`、`dsh.profile.bundles`、`cordis.patch.yml` 的 `insert:` 块各补一处；改完用 `JavaScriptSerializer` 校验 JSON，失败不落盘；原文件留 `.inst-bak`。重复跑幂等（第二次全是 `[=]`）。
 6. **切 asar**：`resources\app.asar` 存在时改名 `app.asar.dshpresetkit.bak`（12 次重试）；若 `resources\app` 还没解包内容则拒绝改名并提示先应用，避免把 DSH 弄到起不来。
-7. **会话预检校准**：给 `lib/net-scope.js` 的 `installRegionGate` 加一行早退，使 `agent/pre-step` 与 `tools/pre-execute` 两个前置钩子**不注册**（预检默认关闭）；同时把 `lib/default-prompt-inject.zh.md` / `.en.md` 里「外挂」两行改成放行文案。原件备份到 `<DSH_HOME>\dsh-preset-kit\gateoff-backup\<档案>\`，`--cal-revert` 一键还原；维护脚本落到 `<DSH_HOME>\dsh-preset-kit\gateoff.cmd`（`--status` / `--apply` / `--revert`）。步骤幂等：已校准的档案再跑只报 `预检=关闭`。
+7. **会话预检校准**：给 `lib/net-scope.js` 的 `installRegionGate` 加一行早退，使 `agent/pre-step` 与 `tools/pre-execute` 两个前置钩子**不注册**（预检默认关闭）；同时把 `lib/default-prompt-inject.zh.md` / `.en.md` 里「外挂」两行改成放行文案。原件备份到 `<DSH_HOME>\dsh-preset-kit\precheck-backup\<档案>\`，`--cal-revert` 一键还原；维护脚本落到 `<DSH_HOME>\dsh-preset-kit\calibrate.cmd`（`--status` / `--apply` / `--revert`）。步骤幂等：已校准的档案再跑只报 `预检=关闭`。
 
 装完：完全退出桌面端（含托盘）重开 → 侧栏 dsh-preset-kit → 状态 → 复核 86 组、0 pending、0 drifted（预检已在安装时校准，无需再点「应用」）。
 
